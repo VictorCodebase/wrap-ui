@@ -4,7 +4,290 @@
 
 import { useState } from "react";
 import { StatusPill, FlatButton, InputField, TextArea, Toggle, SectionTitle, LogPanel, MapToggle } from "./wrap-components.jsx";
-import { VEG_TYPES } from "./utils/utils.js";
+import { VEG_TYPES, vegHex } from "./utils/utils.js";
+
+// ─── Analytics helpers ────────────────────────────────────────────────────────
+function fmt(v, unit = "", dp = 1) {
+	return v !== null && v !== undefined ? `${Number(v).toFixed(dp)}${unit}` : "—";
+}
+
+function rosLabel(haPhr) {
+	if (haPhr === null || haPhr === undefined) return { text: "—", color: "text-neutral-500" };
+	if (haPhr > 120) return { text: "EXTREME", color: "text-red-400" };
+	if (haPhr > 60) return { text: "FAST", color: "text-orange-400" };
+	if (haPhr > 20) return { text: "MODERATE", color: "text-amber-400" };
+	return { text: "SLOW", color: "text-green-600" };
+}
+
+// A single metric card used in the analytics bar
+function MetricCard({ label, value, sub, accent = false, wide = false }) {
+	return (
+		<div className={`flex flex-col justify-between border border-neutral-800 bg-neutral-900 px-3 py-2 ${wide ? "col-span-2" : ""}`}>
+			<div className="text-xs font-mono text-neutral-600 tracking-wider uppercase leading-4">{label}</div>
+			<div className={`text-lg font-mono font-bold leading-6 ${accent ? "text-amber-400" : "text-neutral-200"}`}>{value}</div>
+			{sub && <div className="text-xs font-mono text-neutral-600 leading-4">{sub}</div>}
+		</div>
+	);
+}
+
+// Vegetation breakdown bar — used in analytics for both phases
+function VegBreakdown({ data, label, vegPalette = "natural" }) {
+	if (!data || Object.keys(data).length === 0) return null;
+	const entries = Object.entries(data).sort(([, a], [, b]) => b - a);
+	const total = entries.reduce((s, [, v]) => s + v, 0) || 1;
+
+	return (
+		<div>
+			<div className="text-xs font-mono text-neutral-600 tracking-wider uppercase mb-1">{label}</div>
+			<div className="flex flex-col gap-1">
+				{entries.map(([type, ha]) => {
+					const idx = VEG_TYPES.findIndex((v) => v.label.toUpperCase().replace(/ /g, "_") === type);
+					const veg = VEG_TYPES[idx] ?? { label: type, natural: "#555", highContrast: "#555" };
+					const color = idx >= 0 ? vegHex(idx, vegPalette) : "#555";
+					const pct = (ha / total) * 100;
+					return (
+						<div key={type}>
+							<div className="flex justify-between mb-0.5">
+								<span className="text-xs font-mono text-neutral-500">{veg.label ?? type}</span>
+								<span className="text-xs font-mono text-neutral-400">{fmt(ha, " ha", 1)}</span>
+							</div>
+							<div className="h-1.5 bg-neutral-800 w-full">
+								<div className="h-full" style={{ width: `${pct}%`, backgroundColor: color }} />
+							</div>
+						</div>
+					);
+				})}
+			</div>
+		</div>
+	);
+}
+
+// ─── Analytics Bar (Phase 1) ──────────────────────────────────────────────────
+// Rendered below the canvas after a Phase 1 run. Full centre-panel width.
+export function Phase1AnalyticsBar({ analytics }) {
+	if (!analytics) return null;
+	const {
+		highRiskAreaHectares,
+		dominantVegetationType,
+		highRiskCellCount,
+		highRiskAreaByVegetationType,
+		topIgnitionSeeds,
+		topIgnitionSeedScores,
+		simulatedHorizonHours,
+	} = analytics;
+
+	const [expanded, setExpanded] = useState(false);
+
+	return (
+		<div className="border-t border-neutral-800 bg-neutral-950 flex-shrink-0">
+			{/* Collapsed summary row */}
+			<div className="flex items-center gap-4 px-4 py-2">
+				<div className="flex items-center gap-1.5">
+					<span className="text-xs font-mono text-neutral-600 uppercase tracking-wider">Risk Area</span>
+					<span className="text-sm font-mono font-bold text-amber-400">{fmt(highRiskAreaHectares, " ha", 0)}</span>
+				</div>
+				<div className="flex items-center gap-1.5">
+					<span className="text-xs font-mono text-neutral-600 uppercase tracking-wider">Primary Fuel</span>
+					<span className="text-sm font-mono font-bold text-neutral-300">
+						{dominantVegetationType ? dominantVegetationType.replace(/_/g, " ") : "—"}
+					</span>
+				</div>
+				<div className="flex items-center gap-1.5">
+					<span className="text-xs font-mono text-neutral-600 uppercase tracking-wider">Horizon</span>
+					<span className="text-sm font-mono font-bold text-neutral-300">{fmt(simulatedHorizonHours, "h", 0)}</span>
+				</div>
+				<div className="flex items-center gap-1.5">
+					<span className="text-xs font-mono text-neutral-600 uppercase tracking-wider">High-Risk Cells</span>
+					<span className="text-sm font-mono font-bold text-neutral-300">{highRiskCellCount ?? "—"}</span>
+				</div>
+				<button
+					onClick={() => setExpanded((e) => !e)}
+					className="ml-auto text-xs font-mono text-neutral-600 hover:text-neutral-300 border border-neutral-800 hover:border-neutral-600 px-2 py-1 transition-colors"
+				>
+					{expanded ? "▲ LESS" : "▼ DETAIL"}
+				</button>
+			</div>
+
+			{/* Expanded detail */}
+			{expanded && (
+				<div className="px-4 pb-4 border-t border-neutral-800">
+					<div className="grid grid-cols-4 gap-2 mt-3">
+						<MetricCard
+							label="High-Risk Area"
+							value={fmt(highRiskAreaHectares, " ha", 0)}
+							sub="≥ 75th percentile burn freq"
+							accent
+						/>
+						<MetricCard label="High-Risk Cells" value={highRiskCellCount ?? "—"} sub="top quartile of ensemble" />
+						<MetricCard label="Forecast Window" value={fmt(simulatedHorizonHours, " hours", 0)} sub="Monte Carlo horizon" />
+						<MetricCard
+							label="Primary Fuel"
+							value={dominantVegetationType?.replace(/_/g, " ") ?? "—"}
+							sub="dominant high-risk type"
+						/>
+					</div>
+
+					{/* Top seeds */}
+					{topIgnitionSeeds?.length > 0 && (
+						<div className="mt-3">
+							<div className="text-xs font-mono text-neutral-600 tracking-wider uppercase mb-2">
+								Top Ignition Seeds
+							</div>
+							<div className="flex gap-2 flex-wrap">
+								{topIgnitionSeeds.map((seed, i) => {
+									const score = topIgnitionSeedScores?.[i];
+									const isHigh = score >= 0.8;
+									return (
+										<div
+											key={i}
+											className={`flex items-center gap-1.5 border px-2 py-1 ${isHigh ? "border-red-800 bg-red-950" : "border-neutral-700 bg-neutral-900"}`}
+										>
+											<div
+												className={`w-4 h-4 flex items-center justify-center text-xs font-mono font-bold ${isHigh ? "text-red-300" : "text-amber-500"}`}
+											>
+												{i + 1}
+											</div>
+											<span className="text-xs font-mono text-neutral-500">cell {seed}</span>
+											{score != null && (
+												<span
+													className={`text-xs font-mono font-bold ${isHigh ? "text-red-400" : "text-amber-600"}`}
+												>
+													{Math.round(score * 100)}%
+												</span>
+											)}
+										</div>
+									);
+								})}
+							</div>
+							{topIgnitionSeedScores?.some((s) => s >= 0.8) && (
+								<p className="text-xs font-mono text-red-600 mt-1">
+									⚠ Seed scores above 80% warrant immediate attention
+								</p>
+							)}
+						</div>
+					)}
+
+					{/* Veg breakdown */}
+					<div className="mt-3">
+						<VegBreakdown data={highRiskAreaByVegetationType} label="High-Risk Area by Fuel Type (ha)" />
+					</div>
+				</div>
+			)}
+		</div>
+	);
+}
+
+// ─── Analytics Bar (Phase 2) ──────────────────────────────────────────────────
+export function Phase2AnalyticsBar({ analytics }) {
+	if (!analytics) return null;
+	const {
+		finalBurnedAreaHectares,
+		peakRosHectaresPerHour,
+		stepAtPeakRos,
+		perimeterLengthMetres,
+		naturalBarrierCellsEncountered,
+		burnedAreaByVegetationType,
+		simulatedDurationHours,
+		generationsRun,
+	} = analytics;
+
+	const [expanded, setExpanded] = useState(false);
+	const ros = rosLabel(peakRosHectaresPerHour);
+	const perimKm = perimeterLengthMetres != null ? (perimeterLengthMetres / 1000).toFixed(1) : "—";
+
+	return (
+		<div className="border-t border-neutral-800 bg-neutral-950 flex-shrink-0">
+			{/* Collapsed summary row */}
+			<div className="flex items-center gap-4 px-4 py-2">
+				<div className="flex items-center gap-1.5">
+					<span className="text-xs font-mono text-neutral-600 uppercase tracking-wider">Burned</span>
+					<span className="text-sm font-mono font-bold text-amber-400">{fmt(finalBurnedAreaHectares, " ha", 0)}</span>
+				</div>
+				<div className="flex items-center gap-1.5">
+					<span className="text-xs font-mono text-neutral-600 uppercase tracking-wider">Peak ROS</span>
+					<span className={`text-sm font-mono font-bold ${ros.color}`}>
+						{fmt(peakRosHectaresPerHour, " ha/hr", 0)} · {ros.text}
+					</span>
+				</div>
+				<div className="flex items-center gap-1.5">
+					<span className="text-xs font-mono text-neutral-600 uppercase tracking-wider">Perimeter</span>
+					<span className="text-sm font-mono font-bold text-neutral-300">{perimKm} km</span>
+				</div>
+				<div className="flex items-center gap-1.5">
+					<span className="text-xs font-mono text-neutral-600 uppercase tracking-wider">Duration</span>
+					<span className="text-sm font-mono font-bold text-neutral-300">{fmt(simulatedDurationHours, "h", 1)}</span>
+				</div>
+				<button
+					onClick={() => setExpanded((e) => !e)}
+					className="ml-auto text-xs font-mono text-neutral-600 hover:text-neutral-300 border border-neutral-800 hover:border-neutral-600 px-2 py-1 transition-colors"
+				>
+					{expanded ? "▲ LESS" : "▼ DETAIL"}
+				</button>
+			</div>
+
+			{/* Expanded detail */}
+			{expanded && (
+				<div className="px-4 pb-4 border-t border-neutral-800">
+					<div className="grid grid-cols-4 gap-2 mt-3">
+						<MetricCard label="Burned Area" value={fmt(finalBurnedAreaHectares, " ha", 0)} sub="at simulation end" accent />
+						<MetricCard
+							label="Peak Spread Rate"
+							value={fmt(peakRosHectaresPerHour, " ha/hr", 0)}
+							sub={ros.text + (stepAtPeakRos != null ? ` · at step ${stepAtPeakRos}` : "")}
+							accent
+						/>
+						<MetricCard label="Active Perimeter" value={`${perimKm} km`} sub="approx linear length" />
+						<MetricCard
+							label="Natural Barriers"
+							value={naturalBarrierCellsEncountered ?? "—"}
+							sub={naturalBarrierCellsEncountered > 0 ? "bounded flanks" : "no boundary cover"}
+						/>
+					</div>
+
+					{/* ROS severity guide */}
+					<div className="mt-3 border border-neutral-800 px-3 py-2">
+						<div className="text-xs font-mono text-neutral-600 uppercase tracking-wider mb-2">Spread Severity Guide</div>
+						<div className="grid grid-cols-4 gap-1">
+							{[
+								["> 120 ha/hr", "EXTREME", "text-red-400", "bg-red-950 border-red-800"],
+								["60–120", "FAST", "text-orange-400", "bg-orange-950 border-orange-800"],
+								["20–60", "MODERATE", "text-amber-400", "bg-amber-950 border-amber-800"],
+								["< 20", "SLOW", "text-green-500", "bg-neutral-900 border-neutral-700"],
+							].map(([range, label, textCls, bgCls]) => (
+								<div
+									key={label}
+									className={`border px-2 py-1 ${bgCls} ${peakRosHectaresPerHour != null && ros.text === label ? "ring-1 ring-white ring-opacity-20" : ""}`}
+								>
+									<div className={`text-xs font-mono font-bold ${textCls}`}>{label}</div>
+									<div className="text-xs font-mono text-neutral-600">{range}</div>
+								</div>
+							))}
+						</div>
+					</div>
+
+					{/* Burned area by veg */}
+					<div className="mt-3">
+						<VegBreakdown data={burnedAreaByVegetationType} label="Burned Area by Fuel Type (ha)" />
+					</div>
+
+					{/* Forest flag */}
+					{burnedAreaByVegetationType?.AFROMONTANE_FOREST > 0 && (
+						<div className="mt-2 border border-amber-800 bg-amber-950 px-3 py-2">
+							<p className="text-xs font-mono text-amber-300">
+								⚠ Forest loss detected ({fmt(burnedAreaByVegetationType.AFROMONTANE_FOREST, " ha", 1)}) — KWS
+								involvement recommended
+							</p>
+						</div>
+					)}
+
+					<div className="mt-2 text-xs font-mono text-neutral-700">
+						{generationsRun ?? "—"} CA generations · {fmt(simulatedDurationHours, "h", 1)} simulated
+					</div>
+				</div>
+			)}
+		</div>
+	);
+}
 
 // ─── Past Runs List ───────────────────────────────────────────────────────────
 function PastRunsList({ runs }) {
@@ -15,9 +298,15 @@ function PastRunsList({ runs }) {
 			{runs.map((r) => {
 				const time = r.completedAt ? new Date(r.completedAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "—";
 				const label = r.phase === "ACTIVE_FIRE" ? "Spread Sim" : "Risk Assess";
-				const ws = r.parameters?.windSpeedMsOverride;
-				const wd = r.parameters?.windDirectionDegOverride;
-				const sub = ws != null ? `WS: ${ws}m/s · DIR: ${wd}°` : "";
+				// RunRecord.parameters contains the SimulationConfig snapshot
+				const p = r.parameters ?? {};
+				const sub = [
+					p.cellSizeMetres != null ? `${p.cellSizeMetres}m` : null,
+					p.monteCarloRuns != null ? `N=${p.monteCarloRuns}` : null,
+					p.timeStepMinutes != null ? `Δt=${p.timeStepMinutes}min` : null,
+				]
+					.filter(Boolean)
+					.join(" · ");
 				return (
 					<div
 						key={r.runId}
@@ -29,10 +318,8 @@ function PastRunsList({ runs }) {
 							</span>
 							<span className="text-xs font-mono text-neutral-500 flex-shrink-0">{time}</span>
 						</div>
-						<div className="text-xs font-mono text-neutral-600">
-							{label}
-							{sub ? ` · ${sub}` : ""}
-						</div>
+						<div className="text-xs font-mono text-neutral-600">{label}</div>
+						{sub && <div className="text-xs font-mono text-neutral-700 mt-0.5">{sub}</div>}
 					</div>
 				);
 			})}
@@ -41,7 +328,19 @@ function PastRunsList({ runs }) {
 }
 
 // ─── Left Panel ───────────────────────────────────────────────────────────────
-export function LeftPanel({ session, onRefresh, refreshing, onRunP1, runningP1, onRunP2, runningP2, onStartDraw, drawMode, drawnGeoJson }) {
+export function LeftPanel({
+	session,
+	pastRuns, // from GET /api/runs — passed from root app
+	onRefresh,
+	refreshing,
+	onRunP1,
+	runningP1,
+	onRunP2,
+	runningP2,
+	onStartDraw,
+	drawMode,
+	drawnGeoJson,
+}) {
 	const [windSpeed, setWindSpeed] = useState("");
 	const [windDir, setWindDir] = useState("");
 	const [simHours, setSimHours] = useState("24");
@@ -190,7 +489,7 @@ export function LeftPanel({ session, onRefresh, refreshing, onRunP1, runningP1, 
 				{/* ── Past Runs ── */}
 				<div>
 					<SectionTitle>Past Runs</SectionTitle>
-					<PastRunsList runs={session?.pastRuns} />
+					<PastRunsList runs={pastRuns} />
 				</div>
 			</div>
 
@@ -283,8 +582,23 @@ function CvCorrectionForm({ onCorrect, correcting }) {
 }
 
 // ─── Right Panel ──────────────────────────────────────────────────────────────
-export function RightPanel({ session, phase1Result, phase2Result, showVeg, setShowVeg, log, onCorrect, correcting }) {
+export function RightPanel({
+	session,
+	gridEnv,
+	phase1Result,
+	phase2Result,
+	showVeg,
+	setShowVeg,
+	showTopo,
+	setShowTopo,
+	vegPalette,
+	setVegPalette,
+	log,
+	onCorrect,
+	correcting,
+}) {
 	const mode = session?.mode ?? "PRE_FIRE";
+	const isHighContrast = vegPalette === "highContrast";
 
 	return (
 		<div className="flex flex-col h-full border-l border-neutral-800 bg-neutral-950 overflow-hidden">
@@ -315,7 +629,21 @@ export function RightPanel({ session, phase1Result, phase2Result, showVeg, setSh
 					)}
 				</div>
 
-				{/* ── Vegetation Layer (Phase 1 only) — FR-P1-05 / DEV-005 ── */}
+				{/* ── Terrain Layers — always visible once gridEnv loads ── */}
+				{gridEnv && (
+					<div>
+						<SectionTitle>Map Layers</SectionTitle>
+						<div className="flex flex-col gap-2">
+							<MapToggle checked={showTopo} onChange={setShowTopo} label="Topographic Contours" />
+							{phase1Result && <MapToggle checked={showVeg} onChange={setShowVeg} label="Vegetation Overlay" />}
+						</div>
+						{showTopo && (
+							<p className="text-xs font-mono text-neutral-700 mt-2 leading-4">50m intervals · major lines at 200m</p>
+						)}
+					</div>
+				)}
+
+				{/* ── Vegetation Layer legend (Phase 1 only) — FR-P1-05 / DEV-005 ── */}
 				{phase1Result && (
 					<div>
 						<div className="flex items-center justify-between border-b border-neutral-800 pb-1 mb-2">
@@ -324,37 +652,42 @@ export function RightPanel({ session, phase1Result, phase2Result, showVeg, setSh
 							</span>
 							<MapToggle checked={showVeg} onChange={setShowVeg} label="" />
 						</div>
-						<div className="flex flex-col gap-1.5">
-							{VEG_TYPES.map(({ label, color }) => (
-								<div key={label} className="flex items-center gap-2">
-									<div
-										className="w-3 h-3 flex-shrink-0 border border-neutral-700"
-										style={{ backgroundColor: color }}
-									/>
-									<span className="text-xs font-mono text-neutral-500">{label}</span>
-								</div>
-							))}
+						{/* Palette toggle */}
+						<div className="flex gap-1 mb-2">
+							<button
+								onClick={() => setVegPalette("natural")}
+								className={`flex-1 px-2 py-1 text-xs font-mono border transition-colors ${
+									!isHighContrast
+										? "border-amber-600 bg-amber-950 text-amber-300"
+										: "border-neutral-700 bg-neutral-900 text-neutral-500 hover:border-neutral-500"
+								}`}
+							>
+								Natural
+							</button>
+							<button
+								onClick={() => setVegPalette("highContrast")}
+								className={`flex-1 px-2 py-1 text-xs font-mono border transition-colors ${
+									isHighContrast
+										? "border-amber-600 bg-amber-950 text-amber-300"
+										: "border-neutral-700 bg-neutral-900 text-neutral-500 hover:border-neutral-500"
+								}`}
+							>
+								High Contrast
+							</button>
 						</div>
-					</div>
-				)}
-
-				{/* ── Active Fire stats ── */}
-				{mode === "ACTIVE_FIRE" && phase2Result && (
-					<div>
-						<SectionTitle>Fire Status</SectionTitle>
-						<div className="grid grid-cols-2 gap-x-4 gap-y-2">
-							<div>
-								<div className="text-xs font-mono text-neutral-700">SNAPSHOTS</div>
-								<div className="text-xl font-mono font-bold text-amber-600">
-									{phase2Result.perimetersByTimestamp?.length ?? 0}
-								</div>
-							</div>
-							<div>
-								<div className="text-xs font-mono text-neutral-700">RUN ID</div>
-								<div className="text-xs font-mono text-neutral-400 truncate">
-									{phase2Result.runId?.slice(0, 12).toUpperCase() ?? "—"}
-								</div>
-							</div>
+						<div className="flex flex-col gap-1.5">
+							{VEG_TYPES.map(({ label, natural, highContrast }, i) => {
+								const color = isHighContrast ? highContrast : natural;
+								return (
+									<div key={label} className="flex items-center gap-2">
+										<div
+											className="w-3 h-3 flex-shrink-0 border border-neutral-700"
+											style={{ backgroundColor: color }}
+										/>
+										<span className="text-xs font-mono text-neutral-500">{label}</span>
+									</div>
+								);
+							})}
 						</div>
 					</div>
 				)}
