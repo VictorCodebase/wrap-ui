@@ -587,6 +587,8 @@ export function RightPanel({
 	gridEnv,
 	phase1Result,
 	phase2Result,
+	showFuelRisk,
+	setShowFuelRisk,
 	showVeg,
 	setShowVeg,
 	showTopo,
@@ -634,6 +636,7 @@ export function RightPanel({
 					<div>
 						<SectionTitle>Map Layers</SectionTitle>
 						<div className="flex flex-col gap-2">
+							{session?.fuelRiskValues && <MapToggle checked={showFuelRisk} onChange={setShowFuelRisk} label="CV Fuel Risk" />}
 							<MapToggle checked={showTopo} onChange={setShowTopo} label="Topographic Contours" />
 							{phase1Result && <MapToggle checked={showVeg} onChange={setShowVeg} label="Vegetation Overlay" />}
 						</div>

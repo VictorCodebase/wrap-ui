@@ -141,6 +141,7 @@ function CentrePanel({
 	gridEnv,
 	phase1Result,
 	phase2Result,
+	showFuelRisk,
 	showIgnition,
 	setShowIgnition,
 	showHeatmap,
@@ -273,6 +274,7 @@ function CentrePanel({
 					gridEnv={gridEnv}
 					phase1Result={phase1Result}
 					phase2Result={phase2Result}
+					showFuelRisk={showFuelRisk}
 					showIgnition={showIgnition}
 					showHeatmap={showHeatmap}
 					showVeg={showVeg}
@@ -307,7 +309,7 @@ function CentrePanel({
 			{phase1Result && (
 				<div className="flex items-center gap-5 px-4 py-2 border-t border-neutral-800 flex-shrink-0 bg-neutral-950">
 					{/* Primary toggle — heatmap on/off */}
-					<MapToggle checked={showHeatmap} onChange={setShowHeatmap} label="Damage Heatmap" />
+					<MapToggle checked={showHeatmap} onChange={setShowHeatmap} label="High Damage Freq" />
 					{/* Secondary toggle — ignition likelihood hotspots */}
 					<MapToggle checked={showIgnition} onChange={setShowIgnition} label="Ignition Hotspots" />
 					<span className="text-xs font-mono text-neutral-700 ml-auto">
@@ -375,6 +377,7 @@ export default function WRaPDashboard() {
 	const [runningP2, setRunningP2] = useState(false);
 	const [correcting, setCorrecting] = useState(false);
 
+	const [showFuelRisk, setShowFuelRisk] = useState(true);
 	const [showIgnition, setShowIgnition] = useState(false);
 	const [showHeatmap, setShowHeatmap] = useState(true); // on by default — primary Phase 1 output
 	const [showVeg, setShowVeg] = useState(false);
@@ -688,6 +691,7 @@ export default function WRaPDashboard() {
 						gridEnv={gridEnv}
 						phase1Result={phase1Result}
 						phase2Result={phase2Result}
+						showFuelRisk={showFuelRisk}
 						showIgnition={showIgnition}
 						setShowIgnition={setShowIgnition}
 						showHeatmap={showHeatmap}
@@ -709,6 +713,8 @@ export default function WRaPDashboard() {
 						gridEnv={gridEnv}
 						phase1Result={phase1Result}
 						phase2Result={phase2Result}
+						showFuelRisk={showFuelRisk}
+						setShowFuelRisk={setShowFuelRisk}
 						showVeg={showVeg}
 						setShowVeg={setShowVeg}
 						showTopo={showTopo}

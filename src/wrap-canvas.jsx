@@ -7,20 +7,28 @@
 //   5. Draw overlay  — SVG vertex placement (during draw mode)
 
 import { useEffect, useRef, useCallback, useState } from "react";
-import { damageColor, ignitionColor, vegColor, buildContours, contourLevels } from "./utils/utils.js";
+import { damageColor, ignitionColor, vegColor, fuelRiskColor, buildContours, contourLevels } from "./utils/utils.js";
+
+const sharedTmpCanvas = document.createElement("canvas");
 
 // ─── Draw mode SVG overlay ────────────────────────────────────────────────────
-function DrawOverlay({ width, height, onPolygon, onCancel, transform }) {
+function DrawOverlay({ width, height, cols, rows, onPolygon, onCancel, transform }) {
 	const [points, setPoints] = useState([]);
 	const svgRef = useRef(null);
 
-	const toDataCoords = (screenX, screenY) => [(screenX - transform.offsetX) / transform.scale, (screenY - transform.offsetY) / transform.scale];
+	const toDataCoords = (screenX, screenY) => {
+		const dataX = (screenX - transform.offsetX) / transform.scale;
+		const dataY = (screenY - transform.offsetY) / transform.scale;
+		const dataW = width / transform.scale;
+		const dataH = height / transform.scale;
+		return [(dataX / dataW) * cols, (dataY / dataH) * rows];
+	};
 
 	const handleClick = (e) => {
 		if (e.detail === 2) return;
 		const rect = svgRef.current.getBoundingClientRect();
-		const [x, y] = toDataCoords(e.clientX - rect.left, e.clientY - rect.top);
-		setPoints((prev) => [...prev, [x, y]]);
+		const [col, row] = toDataCoords(e.clientX - rect.left, e.clientY - rect.top);
+		setPoints((prev) => [...prev, [col, row]]);
 	};
 
 	const handleDblClick = (e) => {
@@ -31,7 +39,13 @@ function DrawOverlay({ width, height, onPolygon, onCancel, transform }) {
 		}
 	};
 
-	const toScreen = ([x, y]) => [x * transform.scale + transform.offsetX, y * transform.scale + transform.offsetY];
+	const toScreen = ([col, row]) => {
+		const dataW = width / transform.scale;
+		const dataH = height / transform.scale;
+		const x = (col / cols) * dataW;
+		const y = (row / rows) * dataH;
+		return [x * transform.scale + transform.offsetX, y * transform.scale + transform.offsetY];
+	};
 	const screenPoints = points.map(toScreen);
 	const polyline = screenPoints.map((p) => p.join(",")).join(" ");
 
@@ -99,6 +113,7 @@ export default function GridCanvas({
 	gridEnv,
 	phase1Result,
 	phase2Result,
+	showFuelRisk,
 	showIgnition,
 	showHeatmap,
 	showVeg,
@@ -204,11 +219,59 @@ export default function GridCanvas({
 						}
 				}
 			}
-			const tmp = document.createElement("canvas");
-			tmp.width = offW;
-			tmp.height = offH;
-			tmp.getContext("2d").putImageData(img, 0, 0);
-			ctx.drawImage(tmp, 0, 0, offW, offH);
+			sharedTmpCanvas.width = offW;
+			sharedTmpCanvas.height = offH;
+			sharedTmpCanvas.getContext("2d").putImageData(img, 0, 0);
+			ctx.drawImage(sharedTmpCanvas, 0, 0, offW, offH);
+		}
+
+		// LAYER 2.5 — Fuel Risk
+		if (showFuelRisk && session?.fuelRiskValues) {
+			const pR = session.rows;
+			const pC = session.cols;
+			let fuel = session.fuelRiskValues;
+			if (typeof fuel === 'string') {
+				fuel = Array.from(atob(fuel)).map(c => c.charCodeAt(0));
+			}
+			const offW = Math.max(1, Math.ceil(dataW)),
+				offH = Math.max(1, Math.ceil(dataH));
+			const cW = offW / pC,
+				cH = offH / pR;
+			const img = ctx.createImageData(offW, offH);
+			const d = img.data;
+			let hasData = false;
+
+			for (let r = 0; r < pR; r++) {
+				for (let c = 0; c < pC; c++) {
+					const idx = r * pC + c;
+					const val = Number(fuel[idx]);
+					if (!val || val === 0) continue;
+
+					const px = Math.floor(c * cW),
+						py = Math.floor(r * cH);
+					const pw = Math.max(1, Math.ceil(cW)),
+						ph = Math.max(1, Math.ceil(cH));
+
+					const [fr, fg, fb] = fuelRiskColor(val);
+					const fa = 204; // 80% opacity
+					hasData = true;
+
+					for (let dy = 0; dy < ph && py + dy < offH; dy++)
+						for (let dx = 0; dx < pw && px + dx < offW; dx++) {
+							const pi = ((py + dy) * offW + (px + dx)) * 4;
+							d[pi] = fr;
+							d[pi + 1] = fg;
+							d[pi + 2] = fb;
+							d[pi + 3] = fa;
+						}
+				}
+			}
+			if (hasData) {
+				sharedTmpCanvas.width = offW;
+				sharedTmpCanvas.height = offH;
+				sharedTmpCanvas.getContext("2d").putImageData(img, 0, 0);
+				ctx.drawImage(sharedTmpCanvas, 0, 0, offW, offH);
+			}
 		}
 
 		// LAYER 2 — topographic contours
@@ -281,22 +344,20 @@ export default function GridCanvas({
 
 					if (fa === 0) continue; // fully transparent — leave terrain showing
 
-					const ha = fa / 255;
 					for (let dy = 0; dy < ph && py + dy < offH; dy++)
 						for (let dx = 0; dx < pw && px + dx < offW; dx++) {
 							const pi = ((py + dy) * offW + (px + dx)) * 4;
-							d[pi] = Math.round(d[pi] * (1 - ha) + fr * ha);
-							d[pi + 1] = Math.round(d[pi + 1] * (1 - ha) + fg * ha);
-							d[pi + 2] = Math.round(d[pi + 2] * (1 - ha) + fb * ha);
-							d[pi + 3] = 255;
+							d[pi] = fr;
+							d[pi + 1] = fg;
+							d[pi + 2] = fb;
+							d[pi + 3] = fa;
 						}
 				}
 			}
-			const tmp = document.createElement("canvas");
-			tmp.width = offW;
-			tmp.height = offH;
-			tmp.getContext("2d").putImageData(img, 0, 0);
-			ctx.drawImage(tmp, 0, 0, offW, offH);
+			sharedTmpCanvas.width = offW;
+			sharedTmpCanvas.height = offH;
+			sharedTmpCanvas.getContext("2d").putImageData(img, 0, 0);
+			ctx.drawImage(sharedTmpCanvas, 0, 0, offW, offH);
 
 			// LAYER 3b — top ignition seed markers
 			if (analytics?.topIgnitionSeeds && (phase1Result.cols ?? cols)) {
@@ -368,7 +429,10 @@ export default function GridCanvas({
 				});
 				ctx.shadowBlur = 0;
 			}
-			if (drawnPoints?.length >= 3) _drawManualPolygon(ctx, drawnPoints, scale);
+			if (drawnPoints?.length >= 3) {
+				const screenPoints = drawnPoints.map(([c, r]) => [c * cellW, r * cellH]);
+				_drawManualPolygon(ctx, screenPoints, scale);
+			}
 		}
 
 		ctx.restore();
@@ -376,6 +440,7 @@ export default function GridCanvas({
 		gridEnv,
 		phase1Result,
 		phase2Result,
+		showFuelRisk,
 		showIgnition,
 		showHeatmap,
 		showVeg,
@@ -386,6 +451,7 @@ export default function GridCanvas({
 		drawnPoints,
 		transform,
 		analytics,
+		canvasSize,
 	]);
 
 	useEffect(() => {
@@ -420,6 +486,8 @@ export default function GridCanvas({
 				<DrawOverlay
 					width={canvasSize.w}
 					height={canvasSize.h}
+					cols={session?.cols ?? gridEnv?.cols ?? 1}
+					rows={session?.rows ?? gridEnv?.rows ?? 1}
 					onPolygon={onDrawComplete}
 					onCancel={onDrawCancel}
 					transform={transform}

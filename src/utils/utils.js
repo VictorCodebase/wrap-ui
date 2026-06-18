@@ -37,6 +37,13 @@ export function vegColor(ordinal, mode = "natural") {
 	return [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16), 200];
 }
 
+export function fuelRiskColor(v) {
+	if (v === 1) return [254, 240, 138];
+	if (v === 2) return [249, 115, 22];
+	if (v === 3) return [153, 27, 27];
+	return [0, 0, 0];
+}
+
 export async function apiFetch(path, opts = {}) {
 	const res = await fetch(`${API_BASE}${path}`, { headers: { "Content-Type": "application/json" }, ...opts });
 	if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
@@ -47,7 +54,7 @@ export async function apiFetch(path, opts = {}) {
 // Canvas draw coords are [col, row] in data-space cells (before zoom/pan).
 // UTM: minX=west edge, maxY=north edge, row 0 = northernmost.
 export function pixelToUtm(col, row, session) {
-	return [session.minX + (col + 0.5) * session.cellSizeMetres, session.maxY - (row + 0.5) * session.cellSizeMetres];
+	return [session.minX + col * session.cellSizeMetres, session.maxY - row * session.cellSizeMetres];
 }
 
 // Convert canvas draw points → GeoJSON Polygon in UTM metres.
